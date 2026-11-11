@@ -37,6 +37,7 @@
 #include "s2r_dcp_pkt.h"
 #include "smp.h"
 #include "spmi.h"
+#include "wdt.h"
 #include "sptm_virt_priv.h"
 #include "sptm_virt_s2r_soc.h"
 #include "string.h"
@@ -573,8 +574,23 @@ static void __attribute__((noreturn)) s2r_stop_before_timer(struct exc_info *ctx
            "performed (stop mode). TWI armed 0x%x, parked 0x%x, %lu records. Stopping in the "
            "proxy.\n",
            smp_id(), addr, val, ctx->elr, s2r_twi_mask, s2r_parked_mask, sptm_virt_s2r_head);
+    /* J714c: after a GO wake the USB link is gone for good, and the proxy does not answer after
+     * this stop. Write the ring to DRAM and reset through the watchdog, which keeps DRAM: the next
+     * aura's proxy reads it at its address (the "ring at" line), the newest S2RSTOP marker last. */
+    if (s2r_go) {
+        s2r_clean(sptm_virt_s2r_ring, sptm_virt_s2r_nrec * sizeof(*sptm_virt_s2r_ring));
+        wdt_reboot();
+        while (1)
+            sysop("wfe");
+    }
     if (s2r_nvme_quiet_page)
         printf("SPTM-virt[s2r]: %lu NVMe per-I/O writes not recorded\n", s2r_nvme_quiet_n);
+    /* J714c: the proxy does not answer after this stop, so print every write and marker. */
+    u64 first = sptm_virt_s2r_head > sptm_virt_s2r_nrec ? sptm_virt_s2r_head - sptm_virt_s2r_nrec : 0;
+    printf("SPTM-virt[s2r]: all writes and markers of %lu records\n", sptm_virt_s2r_head);
+    for (u64 i = first; i < sptm_virt_s2r_head; i++)
+        if (sptm_virt_s2r_ring[i % sptm_virt_s2r_nrec].meta & (S2R_WRITE | S2R_MARKER))
+            s2r_print_rec(i);
     sptm_virt_s2r_dump_tail(4096);
     struct uartproxy_msg_start start = {
         .reason = START_HV,
