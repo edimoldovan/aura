@@ -1264,8 +1264,9 @@ static int dt_set_chosen(void)
          * function.
          */
         const char to_append_wfi[] = " idle=nop arm64.nowfxt";
-        /* The T8152 kernel preserves the state its cores lose in WFI. */
-        const char *to_append = chip_id == T8152 ? " arm64.nowfxt" : to_append_wfi;
+        /* The T8152 and T6050 kernels preserve the state their cores lose in WFI. */
+        const char *to_append =
+            (chip_id == T8152 || chip_id == T6050) ? " arm64.nowfxt" : to_append_wfi;
         printf("FDT: appending to bootargs:%s\n", to_append);
 
         /*
